@@ -2,7 +2,6 @@
 from models import db, Restaurant, RestaurantPizza, Pizza
 from flask_migrate import Migrate
 from flask import Flask, request, make_response, jsonify
-from werkzeug.exceptions import NotFound
 from flask_restful import Api, Resource
 import os
 
@@ -14,7 +13,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.json.compact = False
 
-migrate = Migrate(app, db, render_as_batch= True)
+migrate = Migrate(app, db)
 
 db.init_app(app)
 
@@ -30,39 +29,56 @@ api.add_resource(Home, '/')
 
 class Restaurants(Resource):
     def get(self):
-        restaurants = [restaurant.to_dict() for restaurant in Restaurant.query.all()]
+        restaurants = [
+            {
+                "id": restaurant.id,
+                "name": restaurant.name,
+                "address": restaurant.address,
+            }
+            for restaurant in Restaurant.query.all()
+        ]
         return make_response(jsonify(restaurants), 200)
-    
-api.add_resource(Restaurants, '/restaurants')
 
-class RestaurantPizza(Resource):
-    def get(self, id):
-        restaurant = Restaurant.query.filter_by(id=id).first()
-        if restaurant:
-            return make_response(restaurant.to_dict(), 200)
-        return make_response(
-            {"error": f"Restaurant not found"}, 404)
+
+api.add_resource(Restaurants, '/restaurants')
     
-    def delete_restaurant(id):
-        restaurant = Restaurant.query.filter_by(id=id).first()
+class RestaurantInfo(Resource):
+    def get(self, id):
+        restaurant = Restaurant.query.get(id)
+        if restaurant:
+            return make_response(jsonify(restaurant.to_dict()), 200)
+        return make_response({"error": "Restaurant not found"}, 404)
+
+    
+    def delete(self, id):
+        restaurant = Restaurant.query.get(id)
         if restaurant:
             db.session.delete(restaurant)
             db.session.commit()
-            return make_response(
-                {"message": "User deleted successfully"}, 200
-            )
-        return make_response(
-            {"error": f"Restaurant not found"}, 404
-        )
+            return make_response({"message": "Restaurant deleted successfully"}, 200)
+        return make_response({"error": "Restaurant not found"}, 404)
 
-api.add_resource(RestaurantPizza,'/restaurants/<int:id>')
 
-class Pizza(Resource):
+api.add_resource(RestaurantInfo, '/restaurants/<int:id>')
+
+class Pizzas(Resource):
     def get(self):
-        pizzas = Pizza.query.all()
-        return jsonify([pizza.to_dict() for pizza in pizzas])
+        # Construct response explicitly
+        pizzas = [
+            {
+                "id": pizza.id,
+                "name": pizza.name,
+                "ingredients": pizza.ingredients,
+            }
+            for pizza in Pizza.query.all()
+        ]
+        return make_response(jsonify(pizzas), 200)
+
+
+api.add_resource(Pizzas, '/pizzas')
+
+class RestaurantPizzas(Resource):
     def post(self):
-         # Extract the data directly from the request JSON
         data = request.get_json()
 
         # Extract fields from the JSON body
@@ -99,8 +115,6 @@ class Pizza(Resource):
         response = {
             "id": restaurant_pizza.id,
             "price": restaurant_pizza.price,
-            "pizza_id": pizza.id,
-            "restaurant_id": restaurant.id,
             "pizza": {
                 "id": pizza.id,
                 "name": pizza.name,
@@ -115,15 +129,9 @@ class Pizza(Resource):
 
         return make_response(jsonify(response), 201)
 
-api.add_resource(Pizza, '/pizzas')
 
-@app.errorhandler(NotFound)
-def handle_not_found(e):
-    return make_response(
-        "Not Found: The requested resource does not exist.", 404
-    )
+api.add_resource(RestaurantPizzas, '/restaurant_pizzas')
 
-app.register_error_handler(404, handle_not_found)
 
 
 if __name__ == "__main__":
